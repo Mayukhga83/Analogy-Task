@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analogy-dataset-builder"
+version = "0.1.0"
+description = "Reconstructed pipeline for creating a complex analogy benchmark with multiple semantic ground truths."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Reconstructed research implementation"}]
+dependencies = [
+  "numpy>=1.26,<3",
+  "openai>=1.68,<3",
+  "pydantic>=2.8,<3",
+  "python-dotenv>=1.0,<2",
+  "PyYAML>=6.0,<7",
+  "requests>=2.32,<3",
+  "tenacity>=8.5,<10",
+  "tqdm>=4.66,<5",
+  "typer>=0.12,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2,<9",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+analogy-builder = "analogy_builder.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

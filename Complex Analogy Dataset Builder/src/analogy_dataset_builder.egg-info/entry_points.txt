@@ -1,0 +1,2 @@
+[console_scripts]
+analogy-builder = analogy_builder.cli:app

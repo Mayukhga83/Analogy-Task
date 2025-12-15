@@ -1,0 +1,356 @@
+# Complex Analogy Dataset Builder
+
+This repository is a reproducible implementation of the dataset-creation method described in **“From Prototypical to Relational: How LLMs Navigate Complex Analogies.”** It starts from a table of base relations and concept pairs, retrieves Wikipedia evidence, mines additional relations, supports manual relation filtering, ranks relations with a GPT-assisted Max-Diff design, and creates four-option analogy questions with three semantic ground truths.
+
+It is a faithful reference implementation of the published method, not a claim of byte-for-byte recovery of the authors' original private execution state. Wikipedia revisions, model versions, model nondeterminism, manual review decisions, random seeds, and underspecified aggregation details can produce a different final dataset.
+
+## Pipeline
+
+```text
+base relations + concept pairs
+        |
+        v
+Wikipedia co-occurrence retrieval
+        |
+        v
+GPT relation mining with sentence evidence
+        |
+        v
+automatic suggestions + manual filtering CSV
+        |
+        v
+GPT-assisted Max-Diff relation ranking
+        |
+        v
+Wikipedia sentence embeddings
+        |
+        v
+four-target analogy question generation
+        |
+        +--> ranked relational-overlap label
+        +--> context-embedding label
+        +--> prototypicality label
+```
+
+## Input format
+
+Create `data/input/concept_pairs.csv` with these required columns:
+
+```csv
+base_relation,concept_1,concept_2
+capital,Washington,United States
+capital,Ottawa,Canada
+capital,Seoul,South Korea
+```
+
+An optional `pair_id` column is supported. When it is absent or blank, a stable ID is generated automatically.
+
+Each base-relation group must contain at least five concept pairs to create a four-target question for every stem. The four targets are sampled from the stem's base-relation group and are additionally required to share at least one accepted relation with the stem.
+
+## Installation
+
+Python 3.11 or newer is recommended.
+
+### Windows PowerShell
+
+```powershell
+cd analogy_dataset_builder
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e .
+Copy-Item .env.example .env
+Copy-Item config.example.yaml config.yaml
+Copy-Item data\input\concept_pairs.example.csv data\input\concept_pairs.csv
+```
+
+Open `.env` and replace the placeholder with your API key:
+
+```text
+OPENAI_API_KEY=your_key_here
+```
+
+Open `config.yaml` and change the Wikipedia `user_agent` contact address.
+
+### macOS or Linux
+
+```bash
+cd analogy_dataset_builder
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .
+cp .env.example .env
+cp config.example.yaml config.yaml
+cp data/input/concept_pairs.example.csv data/input/concept_pairs.csv
+```
+
+Then add `OPENAI_API_KEY` to `.env` and update the Wikipedia `user_agent` in `config.yaml`.
+
+## Recommended research workflow
+
+### 1. Validate the concept-pair table
+
+```bash
+analogy-builder validate-input
+```
+
+This reports the number of pairs per base relation and identifies groups that are too small for four targets.
+
+### 2. Run until the manual review stage
+
+```bash
+analogy-builder run-until-review
+```
+
+This performs:
+
+1. Wikipedia retrieval
+2. evidence filtering using the configured minimum sentence count
+3. GPT-based relation mining
+4. relation normalization
+5. automatic filtering suggestions
+6. creation of `data/review/relation_review.csv`
+
+The process is resumable. Re-running it skips completed pair IDs.
+
+### 3. Review the mined relations
+
+Open:
+
+```text
+data/review/relation_review.csv
+```
+
+For every row, fill `final_decision` with either:
+
+```text
+accept
+reject
+```
+
+You may also edit `final_relation` to merge synonymous labels into one canonical predicate. Typical rejected categories are:
+
+- duplicate
+- ambiguous
+- opinion-based
+- transient
+- unsupported by the retrieved evidence
+
+Do not change `pair_id`.
+
+### 4. Continue after review
+
+```bash
+analogy-builder resume-after-review
+```
+
+This performs:
+
+1. canonical relation-set construction
+2. Max-Diff relation ranking
+3. sentence embedding and caching
+4. question generation
+5. validation and dataset statistics
+
+The final question dataset is written to:
+
+```text
+data/output/analogy_questions.jsonl
+```
+
+The validation report is written to:
+
+```text
+data/output/validation_report.json
+```
+
+## Fully automatic run
+
+For a quick experimental run without manually reviewing every relation:
+
+```bash
+analogy-builder run-auto
+```
+
+This accepts automatic `accept` suggestions, rejects automatic `reject` suggestions, and drops unresolved `review` rows. It is useful for testing the software, but the manual workflow is preferable for a research dataset.
+
+## Running individual stages
+
+```bash
+analogy-builder retrieve-wikipedia
+analogy-builder mine-relations
+analogy-builder prepare-review
+analogy-builder finalize-relations
+analogy-builder rank-relations
+analogy-builder embed-contexts
+analogy-builder generate-questions
+analogy-builder validate
+```
+
+To use automatic review suggestions only at finalization:
+
+```bash
+analogy-builder finalize-relations --use-suggestions
+```
+
+To discard an existing resumable stage output and restart that stage:
+
+```bash
+analogy-builder retrieve-wikipedia --restart
+analogy-builder mine-relations --restart
+analogy-builder rank-relations --restart
+```
+
+## Reproducing a dataset of 1000-question target
+
+With the full concept-pair inventory, edit `config.yaml`:
+
+```yaml
+questions:
+  target_count: 4
+  questions_per_stem: 1
+  total_questions: 1000
+  seed: 42
+```
+
+The generator first schedules the configured number per stem and then adds extra stem instances until it reaches the requested total. It prevents duplicate target sets for the same stem. If the available groups cannot provide enough unique target combinations, it writes `data/output/generation_warning.txt` and produces the largest feasible dataset.
+
+## Main configuration choices
+
+### Wikipedia inclusion criterion
+
+```yaml
+wikipedia:
+  min_sentences: 5
+  allow_pairs_below_minimum: false
+```
+
+For a tiny smoke test, temporarily set `min_sentences: 1` and `allow_pairs_below_minimum: true`. For the research reconstruction, retain five sentences.
+
+### Models
+
+```yaml
+openai:
+  relation_model: gpt-4.1
+  ranking_model: gpt-4.1
+  embedding_model: text-embedding-3-large
+```
+
+These match the models described in the paper. You may replace them, but doing so changes the experimental reconstruction.
+
+### Context measure
+
+```yaml
+embedding:
+  context_similarity_threshold: 0.5
+```
+
+The implementation computes all stem-sentence versus target-sentence cosine similarities, retains values above the threshold, and returns their mean. This operationalizes the paper's description of summing retained similarities and normalizing by the number that passed the threshold.
+
+### Max-Diff score
+
+```yaml
+maxdiff:
+  subset_size: 4
+  target_appearances_per_relation: 4
+  score_offset: 1.1
+```
+
+For four or more relations, blocks normally contain four items. Two- and three-relation inventories use two-item blocks. The score is:
+
+```text
+P(selected as most) - P(selected as least) + offset
+```
+
+The paper specifies an offset greater than one; this implementation defaults to `1.1` and makes it configurable.
+
+## Output files
+
+```text
+data/work/wikipedia_evidence.jsonl
+    Retrieved co-occurrence sentences and page provenance.
+
+data/work/raw_relations.jsonl
+    Raw and normalized GPT-mined relations.
+
+data/review/relation_review.csv
+    Human-editable filtering table.
+
+data/work/canonical_relations.jsonl
+    Accepted canonical relation sets.
+
+data/work/relation_rankings.jsonl
+    Max-Diff blocks, selections, probabilities, scores, and ranks.
+
+data/cache/embeddings.sqlite3
+    Reusable OpenAI embedding cache.
+
+data/output/analogy_questions.jsonl
+    Four-target questions, score vectors, answer indices, answer pair IDs, and ties.
+
+data/output/validation_report.json
+    Structural checks and descriptive statistics.
+```
+
+## Final question schema
+
+```json
+{
+  "question_id": "q_...",
+  "base_relation": "capital",
+  "stem": {
+    "pair_id": "pair_...",
+    "concept_1": "Washington",
+    "concept_2": "United States"
+  },
+  "targets": [
+    {"pair_id": "pair_...", "concept_1": "Seoul", "concept_2": "South Korea"},
+    {"pair_id": "pair_...", "concept_1": "Ottawa", "concept_2": "Canada"}
+  ],
+  "scores": {
+    "ranked_relational_overlap": [1.82, 1.31, 0.94, 1.10],
+    "context_embedding_similarity": [0.63, 0.58, 0.51, 0.55],
+    "prototypicality": [0.72, 0.79, 0.60, 0.68]
+  },
+  "answers": {
+    "ranked_relational_overlap": 0,
+    "context_embedding_similarity": 0,
+    "prototypicality": 1
+  },
+  "answer_pair_ids": {
+    "ranked_relational_overlap": "pair_...",
+    "context_embedding_similarity": "pair_...",
+    "prototypicality": "pair_..."
+  },
+  "ties": {
+    "ranked_relational_overlap": [0],
+    "context_embedding_similarity": [0],
+    "prototypicality": [1]
+  }
+}
+```
+
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+The tests cover relation-label normalization, input deduplication, balanced Max-Diff block construction, relational-overlap scoring, thresholded context similarity, and tie handling.
+
+## Important reconstruction choices
+
+Some details were not fully specified in the paper. This implementation makes them explicit and configurable:
+
+- current Wikipedia text is used rather than a historical dump;
+- relation extraction uses structured JSON instead of parsing free-form RDF text;
+- relation synonym merging is supported through `relation_aliases.yaml` and manual review;
+- the Max-Diff block design uses a deterministic balanced greedy algorithm;
+- the Max-Diff offset defaults to 1.1;
+- context similarity is the mean of pairwise sentence similarities above 0.5;
+- ties select the first target in the seeded shuffled order while retaining all tied indices;
+- question sampling is seeded and prevents repeated target sets for a stem.
+
+Record the exact configuration, package lock file, model identifiers, Wikipedia revision information, and generated intermediate files when using the pipeline for a publication.

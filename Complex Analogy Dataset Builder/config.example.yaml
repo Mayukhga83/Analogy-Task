@@ -1,0 +1,52 @@
+paths:
+  input_csv: data/input/concept_pairs.csv
+  work_dir: data/work
+  review_dir: data/review
+  output_dir: data/output
+  cache_dir: data/cache
+  relation_aliases_file: relation_aliases.yaml
+
+wikipedia:
+  language: en
+  min_sentences: 5
+  search_results: 8
+  max_pages: 10
+  request_delay_seconds: 0.15
+  request_timeout_seconds: 30
+  max_sentence_chars: 900
+  min_sentence_chars: 25
+  allow_pairs_below_minimum: false
+  user_agent: "AnalogyDatasetBuilder/0.1 (contact: your-email@example.com)"
+
+openai:
+  relation_model: gpt-4.1
+  ranking_model: gpt-4.1
+  embedding_model: text-embedding-3-large
+  max_retries: 5
+  relation_context_char_limit: 24000
+
+embedding:
+  batch_size: 64
+  context_similarity_threshold: 0.5
+
+maxdiff:
+  subset_size: 4
+  target_appearances_per_relation: 4
+  score_offset: 1.1
+  seed: 42
+
+questions:
+  target_count: 4
+  questions_per_stem: 1
+  # Set this to 1210 when using the full concept-pair inventory and you want
+  # to target the paper's final question count. Leave null for one question
+  # per eligible stem.
+  total_questions: null
+  seed: 42
+  require_context_pass: true
+  tie_tolerance: 1.0e-10
+  max_sampling_attempts_per_question: 200
+
+relation_filter:
+  auto_accept_base_relation: true
+  auto_reject_unsupported: false

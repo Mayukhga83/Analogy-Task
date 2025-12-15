@@ -1,0 +1,38 @@
+capital:
+  - capital_of
+  - is_capital_of
+  - capital_city_of
+located_in:
+  - is_in
+  - located_at
+  - location_in
+part_of:
+  - is_part_of
+  - component_of
+shares_border_with:
+  - borders
+  - border_with
+  - adjacent_to
+operating_system:
+  - operating_system_of
+  - runs_on_operating_system
+country_of_citizenship:
+  - citizenship
+  - citizen_of
+diplomatic_relations:
+  - has_diplomatic_relations_with
+filming_location:
+  - filmed_in
+  - was_filmed_in
+notable_work:
+  - known_for_work
+  - has_notable_work
+place_of_death:
+  - died_in
+  - death_place
+place_of_burial:
+  - buried_in
+  - burial_place
+work_location:
+  - works_in
+  - workplace
